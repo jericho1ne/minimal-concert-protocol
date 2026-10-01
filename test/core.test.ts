@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DateTime } from 'luxon';
 import { cacheKey, LocalStore, normalizeText } from '../src/cache.js';
 import { makeMessage } from '../src/notify.js';
-import { formatShow, laDay, ShowService, type Show } from '../src/shows.js';
+import { formatShow, formatShowWithId, laDay, ShowService, type Show } from '../src/shows.js';
 import type { Config } from '../src/config.js';
 import { poolOptions } from '../src/db.js';
 
@@ -57,6 +57,7 @@ test('machine email is persistent and cannot be switched through MCP', () => {
 
 test('compact line and email include full URL and escaped HTML', () => {
   assert.match(formatShow(show), /^Fri 10\/2, 9pm, The Example Band @ The Echo, Echo Park, \$20, https:/);
+  assert.equal(formatShowWithId(show), `${formatShow(show)} | show_id=${show.id}`);
   const message = makeMessage('me@example.com', [show], '<hi>');
   assert.match(message.text, /https:\/\/tickets\.example\/show\?x=1&y=2/);
   assert.match(message.html, /&lt;hi&gt;/);

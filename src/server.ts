@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import { LocalStore } from './cache.js';
 import type { Config } from './config.js';
 import { createNotifiers, deliver, makeMessage } from './notify.js';
-import { formatShow, ShowService } from './shows.js';
+import { formatShow, formatShowWithId, ShowService } from './shows.js';
 
 const uuid = z.uuid();
 const email = z.email();
@@ -30,7 +30,7 @@ export function createServer(config: Config, store: LocalStore, shows: ShowServi
   }, async args => {
     try {
       const result = await shows.search(args);
-      return success(result.length ? result.map(formatShow).join('\n') : 'No upcoming shows found.');
+      return success(result.length ? result.map(formatShowWithId).join('\n') : 'No upcoming shows found.');
     } catch (error) { return failure(error); }
   });
 
@@ -40,7 +40,7 @@ export function createServer(config: Config, store: LocalStore, shows: ShowServi
   }, async ({ neighborhood }) => {
     try {
       const result = await shows.tonight(neighborhood);
-      return success(result.length ? result.map(formatShow).join('\n') : 'No more shows tonight.');
+      return success(result.length ? result.map(formatShowWithId).join('\n') : 'No more shows tonight.');
     } catch (error) { return failure(error); }
   });
 

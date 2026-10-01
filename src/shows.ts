@@ -55,6 +55,10 @@ export function formatShow(show: Show): string {
   return `${day}, ${time}, ${oneLine(show.artist)} @ ${oneLine(show.venue)}, ${oneLine(show.neighborhood ?? show.city ?? 'neighborhood unknown')}, ${price}, ${show.ticketUrl ?? 'ticket link unavailable'}`;
 }
 
+export function formatShowWithId(show: Show): string {
+  return `${formatShow(show)} | show_id=${show.id}`;
+}
+
 function fromRow(row: DbRow): Show {
   let ticketUrl: string | null = null;
   if (row.tickets_url) {
