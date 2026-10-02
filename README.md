@@ -23,6 +23,17 @@ npm run add-claude-mcp
 
 This registers the built server with Claude Code. It includes `DATABASE_SSL_NO_VERIFY=true`, a local Supabase certificate workaround
 
+The start Claude CLI normally, and type `/mcp` - the `letsgetdown` MCP should be listed. 
+
+## Sample Questions
+1. What shows are playing in Hollywood tonight?
+2. Which neighborhood has the most live music this weekend?
+3. What Dance Performances are taking place in Los Angeles between Oct 5-30, 2026?
+5. Tell me more about the first show on that list.
+6. Email me the Young Thug show at the Mayan.
+7. Send me a summary of all the Downtown LA shows this weekend.
+
+
 ## Tools
 
 | Tool | Inputs | What it does |
