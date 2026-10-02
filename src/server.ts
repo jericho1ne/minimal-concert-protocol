@@ -15,11 +15,11 @@ function failure(error: unknown) {
   return { content: [{ type: 'text' as const, text }], isError: true };
 }
 
-export function createServer(config: Config, store: LocalStore, shows: ShowService): McpServer {
+export function createServer(config: Config, store: LocalStore, shows: ShowService, options: { readOnly?: boolean } = {}): McpServer {
   const server = new McpServer({ name: 'letsgetdown', version: '0.1.0' });
 
   server.registerTool('search_shows', {
-    description: 'Find upcoming LA live shows in an inclusive LA calendar-date range. Results are capped at 20; unknown prices remain included under max_price.',
+    description: 'Find upcoming LA live shows in an inclusive LA calendar-date range. Results are capped at 20. When max_price is set, only shows with a known price at or below that amount are included.',
     inputSchema: z.object({
       start_date: date,
       end_date: date,
@@ -53,6 +53,8 @@ export function createServer(config: Config, store: LocalStore, shows: ShowServi
       return success(show ? `${formatShow(show)}\nShow ID: ${show.id}` : 'Show not found.');
     } catch (error) { return failure(error); }
   });
+
+  if (options.readOnly) return server;
 
   server.registerTool('set_my_email', {
     description: 'Register your email address on this machine before using email tools. Only one address can be registered; this does not send mail.',

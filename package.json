@@ -6,13 +6,16 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "dev:http": "npm run build && DATABASE_SSL_NO_VERIFY=true MCP_PORT=3001 node dist/index.js --http",
+    "dev:http-public": "npm run build && DATABASE_SSL_NO_VERIFY=true MCP_PORT=3001 node dist/index.js --http-public",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "check:venue-location": "node --import tsx src/check-venue-location.ts",
     "recipient:correct": "node --import tsx src/correct-recipient.ts",
-    "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
+    "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "inspect:http-public": "npx @modelcontextprotocol/inspector --server-url http://127.0.0.1:3001/mcp --transport http"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.0",

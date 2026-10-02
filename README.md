@@ -36,7 +36,9 @@ claude mcp add --scope user letsgetdown -- env DATABASE_SSL_NO_VERIFY=true "$NOD
 
 Run `codex mcp list` or `claude mcp list` to confirm registration, then ask either client: “What shows are playing in Hollywood tonight?” The SSL setting is the local Supabase certificate workaround; remove it once certificate verification works normally.
 
-For local Streamable HTTP instead, run `node dist/index.js --http` and use `http://127.0.0.1:3000/mcp`. Set `MCP_AUTH_TOKEN` for bearer-token protection.
+For local Streamable HTTP with all six tools, run `npm run dev:http` and use `http://127.0.0.1:3001/mcp`. Set `MCP_AUTH_TOKEN` for bearer-token protection.
+
+Story 7's first hosted-mode slice is available for local testing with `npm run dev:http-public`. In a second terminal, run `npm run inspect:http-public`; Inspector opens against the correct URL. This mode advertises only `shows_tonight`, `search_shows`, and `get_show`; it never registers email or personal-data tools. It is not a production deployment: user identity, private settings storage, rate limits, and HTTPS hosting are still pending. Both `dev:http*` scripts enable the local Supabase certificate workaround; do not use them for cloud hosting.
 
 ## Test
 
@@ -53,7 +55,7 @@ The last command passes the local-test SSL workaround into Inspector's server pr
 | Tool | Inputs | What it does |
 | --- | --- | --- |
 | `shows_tonight` | Optional: `neighborhood` (string) | Lists up to 20 upcoming shows on the current Los Angeles calendar date. |
-| `search_shows` | Required: `start_date`, `end_date` (strings). Optional: `genre`, `neighborhood` (strings); `max_price` (number). | Finds up to 20 upcoming shows in the site's data within an inclusive date range. Shows with unknown prices remain included when `max_price` is set. |
+| `search_shows` | Required: `start_date`, `end_date` (strings). Optional: `genre`, `neighborhood` (strings); `max_price` (number). | Finds up to 20 upcoming shows in the site's data within an inclusive date range. When `max_price` is set, shows with unknown prices are excluded. |
 | `get_show` | Required: `show_id` (UUID string) | Gets details for one show. |
 | `set_my_email` | Required: `email` (string) | Registers one email address on this machine for the email tools. Does not send mail. |
 | `send_show_to_me` | Required: `show_id` (string). Optional: `note` (string). | Emails one upcoming show with its full ticket-purchase URL. Requires `set_my_email` first. |

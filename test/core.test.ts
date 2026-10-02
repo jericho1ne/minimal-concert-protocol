@@ -11,6 +11,7 @@ import { formatShow, formatShowWithId, laDay, ShowService, type Show } from '../
 import type { Config } from '../src/config.js';
 import { poolOptions } from '../src/db.js';
 import { lookupVenueNeighborhood } from '../src/mapbox.js';
+import { createServer } from '../src/server.js';
 
 const show: Show = {
   id: '833aeb44-3877-4ac2-ae16-7df4f408a951',
@@ -24,6 +25,24 @@ const config: Config = {
   notifyBackends: ['console'], cacheTtlHours: 12, cacheDbPath: ':memory:',
   mcpHost: '127.0.0.1', mcpPort: 3000
 };
+
+test('discovery-only server exposes show tools but no personal or email tools', () => {
+  const store = new LocalStore(':memory:');
+  const shows = new ShowService(config, store);
+  try {
+    const publicServer = createServer(config, store, shows, { readOnly: true });
+    const localServer = createServer(config, store, shows);
+    for (const name of ['shows_tonight', 'search_shows', 'get_show']) {
+      assert.ok(publicServer.toolInputSchemaJson(name), `${name} should be public`);
+    }
+    for (const name of ['set_my_email', 'send_show_to_me', 'email_summary']) {
+      assert.equal(publicServer.toolInputSchemaJson(name), undefined, `${name} must not be public`);
+      assert.ok(localServer.toolInputSchemaJson(name), `${name} should remain available locally`);
+    }
+  } finally {
+    store.close();
+  }
+});
 
 test('LA date parsing rejects invalid dates and crosses DST correctly', () => {
   assert.throws(() => laDay('2026-02-30'));
@@ -148,7 +167,7 @@ test('email summary sends one message with both full ticket links', async () => 
   }
 });
 
-test('search uses fixed parameterized SQL, includes unknown price, caps results', async () => {
+test('search uses fixed parameterized SQL, includes unknown prices without a price filter, and caps results', async () => {
   const store = new LocalStore(':memory:');
   let calls = 0;
   const fakePool = {
@@ -166,12 +185,26 @@ test('search uses fixed parameterized SQL, includes unknown price, caps results'
   };
   const service = new ShowService(config, store, fakePool as never);
   const day = DateTime.now().setZone('America/Los_Angeles').plus({ days: 2 }).toISODate()!;
-  const first = await service.search({ start_date: day, end_date: day, max_price: 10 });
-  const second = await service.search({ start_date: day, end_date: day, max_price: 10 });
+  const first = await service.search({ start_date: day, end_date: day });
+  const second = await service.search({ start_date: day, end_date: day });
   assert.equal(first.length, 20);
   assert.deepEqual(first, second);
   assert.equal(calls, 1);
-  store.close();
+  const candidates: Show[] = [
+    { ...show, id: '833aeb44-3877-4ac2-ae16-000000000001', startsAt: DateTime.fromISO(`${day}T18:00`, { zone: 'America/Los_Angeles' }).toUTC().toISO()!, price: null },
+    { ...show, id: '833aeb44-3877-4ac2-ae16-000000000002', startsAt: DateTime.fromISO(`${day}T19:00`, { zone: 'America/Los_Angeles' }).toUTC().toISO()!, price: 29 },
+    { ...show, id: '833aeb44-3877-4ac2-ae16-000000000003', startsAt: DateTime.fromISO(`${day}T20:00`, { zone: 'America/Los_Angeles' }).toUTC().toISO()!, price: 30 },
+    { ...show, id: '833aeb44-3877-4ac2-ae16-000000000004', startsAt: DateTime.fromISO(`${day}T21:00`, { zone: 'America/Los_Angeles' }).toUTC().toISO()!, price: 31 }
+  ];
+  const key = cacheKey('search_shows', { start_date: day, end_date: day, neighborhood: undefined, genre: undefined, max_price: 30 });
+  store.put(key, candidates, config.cacheTtlHours);
+  try {
+    const result = await service.search({ start_date: day, end_date: day, max_price: 30 });
+    assert.deepEqual(result.map(item => item.price), [29, 30]);
+    assert.deepEqual(result.map(item => item.id), [candidates[1]!.id, candidates[2]!.id]);
+  } finally {
+    store.close();
+  }
 });
 
 test('Mapbox venue lookup accepts an exact LA POI and rejects a different venue', async () => {

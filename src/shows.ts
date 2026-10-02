@@ -146,7 +146,7 @@ export class ShowService {
     for (const show of shows) {
       if (new Date(show.startsAt).getTime() < Date.now()) continue;
       if (genre && !normalizeText(show.genre ?? undefined)?.includes(genre)) continue;
-      if (maxPrice !== undefined && show.price !== null && show.price > maxPrice) continue;
+      if (maxPrice !== undefined && (show.price === null || show.price > maxPrice)) continue;
       let enriched = show;
       if (!show.neighborhood && this.config.mapboxAccessToken) {
         const venueKey = `${normalizeText(show.venue)}|${normalizeText(show.city ?? undefined)}`;

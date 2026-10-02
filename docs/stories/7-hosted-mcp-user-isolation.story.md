@@ -1,6 +1,6 @@
 # Story 7: Hosted MCP with isolated user data
 
-Status: Backlog — no hosted deployment or database changes yet.
+Status: In progress — discovery-only HTTP mode implemented and unit-tested; no hosted deployment, OAuth, or database changes yet.
 
 ## Story
 
@@ -19,7 +19,7 @@ As a showgoer using a shared hosted MCP endpoint, I want my saved email, future 
 
 - Choose the hosted identity provider and verify client support for its authorization flow.
 - Design the per-user (and, if needed, per-installation) persistence schema and migration in Supabase Postgres.
-- Separate public discovery handlers from authenticated notification handlers; preserve the current local-only behavior.
+- Keep the implemented `--http-public` discovery-only mode free of personal tools. Next, separate authenticated notification handlers while preserving the current local-only behavior.
 - Add isolation/security tests, then deploy and document the hosted HTTPS endpoint.
 
 ## Note
