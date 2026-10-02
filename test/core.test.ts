@@ -146,3 +146,41 @@ test('shows_tonight adds Mapbox neighborhood without caching the Mapbox result',
     store.close();
   }
 });
+
+test('search_shows filters on Mapbox neighborhood without caching it', async () => {
+  const store = new LocalStore(':memory:');
+  const originalFetch = globalThis.fetch;
+  let mapboxCalls = 0;
+  let dbCalls = 0;
+  globalThis.fetch = (async () => {
+    mapboxCalls++;
+    return { ok: true, json: async () => ({ features: [{ properties: {
+      feature_type: 'poi', name: 'The Fonda Theatre', context: { neighborhood: { name: 'Hollywood' } }
+    } }] }) } as Response;
+  }) as typeof fetch;
+  const day = DateTime.now().setZone('America/Los_Angeles').plus({ days: 2 }).toISODate()!;
+  const fakePool = {
+    query: async () => {
+      dbCalls++;
+      return { rows: [{
+        id: show.id, artist: show.artist, venue: 'Fonda Theatre',
+        date: DateTime.fromISO(day, { zone: 'America/Los_Angeles' }).set({ hour: 20 }).toJSDate(),
+        tickets_url: null, full_address: null, city: null
+      }] };
+    },
+    end: async () => {}
+  };
+  try {
+    const service = new ShowService({ ...config, mapboxAccessToken: 'test-token' }, store, fakePool as never);
+    const filters = { start_date: day, end_date: day, neighborhood: 'Hollywood', max_price: 20 };
+    assert.equal((await service.search(filters))[0]?.neighborhood, 'Hollywood');
+    assert.equal((await service.search(filters))[0]?.neighborhood, 'Hollywood');
+    assert.equal(dbCalls, 1);
+    assert.equal(mapboxCalls, 2);
+    const cached = store.get<Show[]>(cacheKey('search_shows', { ...filters, neighborhood: 'hollywood' }));
+    assert.equal(cached?.[0]?.neighborhood, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    store.close();
+  }
+});

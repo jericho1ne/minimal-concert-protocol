@@ -93,11 +93,16 @@ export class ShowService {
     this.pool = pool ?? new Pool(poolOptions(config));
   }
 
-  async search(filters: SearchFilters, resultLimit = 20): Promise<Show[]> {
+  async search(filters: SearchFilters): Promise<Show[]> {
+    if (filters.max_price !== undefined && (!Number.isFinite(filters.max_price) || filters.max_price < 0)) throw new Error('max_price must be nonnegative');
+    const shows = await this.searchCandidates(filters);
+    return this.selectShows(shows, normalizeText(filters.neighborhood), normalizeText(filters.genre), filters.max_price);
+  }
+
+  private async searchCandidates(filters: SearchFilters): Promise<Show[]> {
     const start = laDay(filters.start_date);
     const end = laDay(filters.end_date);
     if (end < start || end.diff(start, 'days').days > 31) throw new Error('Date range must be 0–31 days');
-    if (filters.max_price !== undefined && (!Number.isFinite(filters.max_price) || filters.max_price < 0)) throw new Error('max_price must be nonnegative');
     const neighborhood = normalizeText(filters.neighborhood);
     const genre = normalizeText(filters.genre);
     const key = cacheKey('search_shows', {
@@ -118,12 +123,7 @@ export class ShowService {
       shows = await enrichShows(result.rows.map(fromRow), this.config);
       this.store.put(key, shows, this.config.cacheTtlHours);
     }
-    const now = Date.now();
-    return shows.filter(show => new Date(show.startsAt).getTime() >= now)
-      .filter(show => !neighborhood || normalizeText(show.neighborhood ?? undefined) === neighborhood)
-      .filter(show => !genre || normalizeText(show.genre ?? undefined)?.includes(genre))
-      .filter(show => filters.max_price === undefined || show.price === null || show.price <= filters.max_price)
-      .slice(0, resultLimit);
+    return shows;
   }
 
   async tonight(neighborhood?: string): Promise<Show[]> {
@@ -132,14 +132,20 @@ export class ShowService {
     const key = cacheKey('shows_tonight', { la_date: today, neighborhood: wanted, version: 'mapbox-response-only' });
     let shows = this.store.get<Show[]>(key);
     if (!shows) {
-      shows = await this.search({ start_date: today, end_date: today }, wanted ? 100 : 20);
+      shows = await this.searchCandidates({ start_date: today, end_date: today });
       // Cache the DB/Gemini result only; Mapbox data is added to response copies below.
       this.store.put(key, shows, this.config.cacheTtlHours);
     }
+    return this.selectShows(shows, wanted);
+  }
+
+  private async selectShows(shows: Show[], wanted?: string, genre?: string, maxPrice?: number): Promise<Show[]> {
     const resolved = new Map<string, string | null>();
     const matches: Show[] = [];
     for (const show of shows) {
       if (new Date(show.startsAt).getTime() < Date.now()) continue;
+      if (genre && !normalizeText(show.genre ?? undefined)?.includes(genre)) continue;
+      if (maxPrice !== undefined && show.price !== null && show.price > maxPrice) continue;
       let enriched = show;
       if (!show.neighborhood && this.config.mapboxAccessToken) {
         const venueKey = `${normalizeText(show.venue)}|${normalizeText(show.city ?? undefined)}`;

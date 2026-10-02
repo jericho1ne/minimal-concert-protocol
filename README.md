@@ -14,7 +14,7 @@ cp .env.example .env
 npm run build
 ```
 
-Set `DATABASE_URL` in `.env` to the read-only Postgres connection string. `.env` is gitignored. `GEMINI_API_KEY` is optional for genre/neighborhood enrichment; `MAPBOX_ACCESS_TOKEN` enables an uncached venue-neighborhood fallback in `shows_tonight`. For email delivery, set `RESEND_API_KEY` and `EMAIL_FROM` to a verified sender; email has not yet been tested.
+Set `DATABASE_URL` in `.env` to the read-only Postgres connection string. `.env` is gitignored. `GEMINI_API_KEY` is optional for genre/neighborhood enrichment; `MAPBOX_ACCESS_TOKEN` enables an uncached venue-neighborhood fallback in `shows_tonight` and `search_shows`. For email delivery, set `RESEND_API_KEY` and `EMAIL_FROM` to a verified sender; email has not yet been tested.
 
 The fallback uses [Mapbox Search Box](https://docs.mapbox.com/api/search/search-box/) and reads `properties.context.neighborhood.name`. [Mapbox Places address properties](https://docs.mapbox.com/api/search/places/#address-properties) document the analogous `address.neighborhood` field, but this server does not call Places Details.
 
