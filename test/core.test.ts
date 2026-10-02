@@ -7,7 +7,7 @@ import { DateTime } from 'luxon';
 import Database from 'better-sqlite3';
 import { cacheKey, LocalStore, normalizeText } from '../src/cache.js';
 import { makeMessage, ResendNotifier } from '../src/notify.js';
-import { formatShow, formatShowWithId, laDay, ShowService, type Show } from '../src/shows.js';
+import { formatShow, formatShowWithId, laDay, ShowService, weekendWindow, type Show } from '../src/shows.js';
 import type { Config } from '../src/config.js';
 import { poolOptions } from '../src/db.js';
 import { lookupVenueNeighborhood } from '../src/mapbox.js';
@@ -32,7 +32,7 @@ test('discovery-only server exposes show tools but no personal or email tools', 
   try {
     const publicServer = createServer(config, store, shows, { readOnly: true });
     const localServer = createServer(config, store, shows);
-    for (const name of ['shows_tonight', 'search_shows', 'get_show']) {
+    for (const name of ['shows_tonight', 'search_shows', 'get_show', 'weekend_neighborhoods']) {
       assert.ok(publicServer.toolInputSchemaJson(name), `${name} should be public`);
     }
     for (const name of ['set_my_email', 'send_show_to_me', 'email_summary']) {
@@ -48,6 +48,68 @@ test('LA date parsing rejects invalid dates and crosses DST correctly', () => {
   assert.throws(() => laDay('2026-02-30'));
   assert.equal(laDay('2026-03-08').toUTC().toISO(), '2026-03-08T08:00:00.000Z');
   assert.equal(laDay('2026-03-09').toUTC().toISO(), '2026-03-09T07:00:00.000Z');
+});
+
+test('weekend window stays on the current weekend and crosses DST in LA time', () => {
+  const friday = weekendWindow(DateTime.fromISO('2026-10-30T12:00:00', { zone: 'America/Los_Angeles' }));
+  assert.equal(friday.start.toISODate(), '2026-10-30');
+  assert.equal(friday.end.toISODate(), '2026-11-02');
+  assert.equal(friday.end.toUTC().diff(friday.start.toUTC(), 'hours').hours, 73);
+  const sunday = weekendWindow(DateTime.fromISO('2026-11-01T22:00:00', { zone: 'America/Los_Angeles' }));
+  assert.equal(sunday.start.toISODate(), '2026-10-30');
+  const monday = weekendWindow(DateTime.fromISO('2026-11-02T12:00:00', { zone: 'America/Los_Angeles' }));
+  assert.equal(monday.start.toISODate(), '2026-11-06');
+});
+
+test('weekend counts use all shows, resolve each venue once per request, and do not cache Mapbox results', async () => {
+  const store = new LocalStore(':memory:');
+  const originalFetch = globalThis.fetch;
+  let dbCalls = 0;
+  let mapboxCalls = 0;
+  const now = DateTime.fromISO('2026-10-02T12:00:00', { zone: 'America/Los_Angeles' });
+  const date = DateTime.fromISO('2026-10-03T20:00:00', { zone: 'America/Los_Angeles' }).toJSDate();
+  const fakePool = {
+    query: async (sql: string, params: unknown[]) => {
+      dbCalls++;
+      assert.match(sql, /s\.date >= \$1 AND s\.date < \$2 AND s\.date >= \$3/);
+      assert.match(sql, /LIMIT 1001/);
+      assert.deepEqual(params, [now.startOf('day').toUTC().toISO(), now.startOf('day').plus({ days: 3 }).toUTC().toISO(), now.toUTC().toISO()]);
+      return { rows: [
+        { venue: 'The Echo', city: 'Los Angeles', date },
+        { venue: 'The Echo', city: 'Los Angeles', date },
+        { venue: 'Lodge Room', city: 'Los Angeles', date },
+        { venue: 'Unknown Venue', city: 'Los Angeles', date }
+      ] };
+    },
+    end: async () => {}
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    mapboxCalls++;
+    const query = new URL(String(input)).searchParams.get('q') ?? '';
+    const name = query.startsWith('The Echo,') ? 'The Echo' : query.startsWith('Lodge Room,') ? 'Lodge Room' : 'Another Venue';
+    const neighborhood = name === 'The Echo' ? 'Echo Park' : 'Highland Park';
+    return { ok: true, json: async () => ({ features: [{ properties: {
+      feature_type: 'poi', name, context: { neighborhood: { name: neighborhood }, region: { region_code: 'CA' }, country: { country_code: 'US' } }
+    } }] }) } as Response;
+  }) as typeof fetch;
+  try {
+    const service = new ShowService({ ...config, mapboxAccessToken: 'test-token' }, store, fakePool as never);
+    const first = await service.weekendNeighborhoods(now);
+    assert.equal(first.totalShows, 4);
+    assert.equal(first.unresolvedShows, 1);
+    assert.deepEqual(first.neighborhoods, [
+      { neighborhood: 'Echo Park', shows: 2 },
+      { neighborhood: 'Highland Park', shows: 1 }
+    ]);
+    assert.equal(dbCalls, 1);
+    assert.equal(mapboxCalls, 3);
+    await service.weekendNeighborhoods(now);
+    assert.equal(dbCalls, 1);
+    assert.equal(mapboxCalls, 6);
+  } finally {
+    globalThis.fetch = originalFetch;
+    store.close();
+  }
 });
 
 test('cache keys are stable after filter canonicalization', () => {
