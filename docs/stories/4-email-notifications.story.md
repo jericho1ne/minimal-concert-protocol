@@ -1,6 +1,6 @@
 # Story 4: User-requested email notifications
 
-Status: Implemented locally; live delivery requires Resend credentials, a verified sender domain, and recipient registration.
+Status: Both `send_show_to_me` and `email_summary` verified end-to-end through MCP Inspector, Resend, and the recipient inbox, including full ticket links. The summary email HTML was subsequently simplified to show one visible ticket URL per show; that display change is covered by local tests.
 
 ## Story
 

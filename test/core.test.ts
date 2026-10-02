@@ -114,6 +114,40 @@ test('Resend sends one email with the full ticket link and reports provider reje
   }
 });
 
+test('email summary sends one message with both full ticket links', async () => {
+  const second: Show = {
+    ...show,
+    id: '833aeb44-3877-4ac2-ae16-7df4f408a952',
+    artist: 'Second Artist',
+    ticketUrl: 'https://tickets.example/second?ref=a&seat=b'
+  };
+  const message = makeMessage('me@letsgetdown.io', [show, second]);
+  assert.equal(message.subject, "Let's Get Down: 2 shows");
+  assert.match(message.text, /https:\/\/tickets\.example\/show\?x=1&y=2/);
+  assert.match(message.text, /https:\/\/tickets\.example\/second\?ref=a&seat=b/);
+  assert.match(message.html, /href="https:\/\/tickets\.example\/show\?x=1&amp;y=2"/);
+  assert.match(message.html, /href="https:\/\/tickets\.example\/second\?ref=a&amp;seat=b"/);
+  assert.equal((message.html.match(/<li>/g) ?? []).length, 2);
+  assert.equal((message.html.match(/<a href=/g) ?? []).length, 2);
+  assert.doesNotMatch(message.html, /Tickets for/);
+
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    calls++;
+    const body = JSON.parse(String(init?.body)) as { to: string[]; html: string };
+    assert.deepEqual(body.to, ['me@letsgetdown.io']);
+    assert.equal(body.html, message.html);
+    return { ok: true } as Response;
+  }) as typeof fetch;
+  try {
+    await new ResendNotifier('test-key', 'Shows <alerts@example.com>').send(message);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('search uses fixed parameterized SQL, includes unknown price, caps results', async () => {
   const store = new LocalStore(':memory:');
   let calls = 0;

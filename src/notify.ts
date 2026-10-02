@@ -60,13 +60,12 @@ function escapeHtml(value: string): string {
 }
 
 export function makeMessage(to: string, shows: Show[], note?: string): Message {
-  const lines = shows.map(formatShow);
+  const lines = shows.map(show => formatShow(show));
   const subject = shows.length === 1 ? `Show alert: ${shows[0].artist}` : `Let's Get Down: ${shows.length} shows`;
   const text = [note?.trim(), ...lines].filter(Boolean).join('\n\n');
   const links = shows.map(show => {
-    const label = `${show.artist} @ ${show.venue}`;
     const href = show.ticketUrl;
-    return `<li>${escapeHtml(formatShow(show))}${href ? ` — <a href="${escapeHtml(href)}">Tickets for ${escapeHtml(label)}</a>` : ''}</li>`;
+    return `<li>${escapeHtml(formatShow(show, false))} — ${href ? `<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>` : 'ticket link unavailable'}</li>`;
   }).join('');
   const html = `${note ? `<p>${escapeHtml(note)}</p>` : ''}<ul>${links}</ul>`;
   return { to, subject, text, html };

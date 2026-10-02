@@ -47,13 +47,14 @@ export function laDay(value: string): DateTime {
   return date.startOf('day');
 }
 
-export function formatShow(show: Show): string {
+export function formatShow(show: Show, includeTicketUrl = true): string {
   const oneLine = (value: string): string => value.replace(/[\r\n\t\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim();
   const when = DateTime.fromISO(show.startsAt).setZone(LA_ZONE);
   const day = when.toFormat('ccc M/d');
   const time = when.toFormat('h:mma').toLowerCase().replace(':00', '');
   const price = show.price === null ? 'price unknown' : `$${show.price}`;
-  return `${day}, ${time}, ${oneLine(show.artist)} @ ${oneLine(show.venue)}, ${oneLine(show.neighborhood ?? show.city ?? 'neighborhood unknown')}, ${price}, ${show.ticketUrl ?? 'ticket link unavailable'}`;
+  const details = `${day}, ${time}, ${oneLine(show.artist)} @ ${oneLine(show.venue)}, ${oneLine(show.neighborhood ?? show.city ?? 'neighborhood unknown')}, ${price}`;
+  return includeTicketUrl ? `${details}, ${show.ticketUrl ?? 'ticket link unavailable'}` : details;
 }
 
 export function formatShowWithId(show: Show): string {
