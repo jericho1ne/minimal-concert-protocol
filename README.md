@@ -1,8 +1,6 @@
 # letsgetdown MCP
 
-A TypeScript MCP server for upcoming shows from the Postgres database behind [letsgetdown.io](https://letsgetdown.io). It uses the official MCP SDK, read-only `pg` queries, and a local cache with a 12-hour default TTL. Tool callers cannot supply SQL.
-
-`shows_tonight` and `search_shows` have been tested through MCP Inspector against the live database. Both email tools have been verified through inbox delivery. See the inspected [database schema](docs/schema-report.md) and [current architecture](docs/mcp-architecture.md).
+An MCP server for upcoming shows from [letsgetdown.io](https://letsgetdown.io). See the [architecture](docs/mcp-architecture.md).
 
 ## Setup
 
@@ -14,51 +12,29 @@ cp .env.example .env
 npm run build
 ```
 
-Set `DATABASE_URL` in `.env` to the read-only Postgres connection string. `.env` is gitignored. `GEMINI_API_KEY` is optional for genre/neighborhood enrichment; `MAPBOX_ACCESS_TOKEN` enables an uncached venue-neighborhood fallback in `shows_tonight` and `search_shows` and is required for `weekend_neighborhoods`. For email delivery, set `RESEND_API_KEY` and `EMAIL_FROM` to a verified sender.
-
-The fallback uses [Mapbox Search Box](https://docs.mapbox.com/api/search/search-box/) and reads `properties.context.neighborhood.name`. [Mapbox Places address properties](https://docs.mapbox.com/api/search/places/#address-properties) document the analogous `address.neighborhood` field, but this server does not call Places Details.
-
-The available tools are `shows_tonight`, `search_shows`, `get_show`, `weekend_neighborhoods`, `set_my_email`, `send_show_to_me`, and `email_summary`. Show lists are capped at 20 and use Los Angeles time. `search_shows` accepts date endpoints at most 31 days apart. It searches the site's show data, which can include venues outside Los Angeles; there is no city boundary filter. The database query fetches at most 100 candidates before neighborhood, genre, and price filtering. `weekend_neighborhoods` counts all upcoming shows from Friday through Sunday and looks up each distinct venue once per request. Its raw database rows use the 12-hour cache; Mapbox results and counts are never persisted.
-
-Show data is queried from Postgres on a cache miss, then may be up to 12 hours old by default. Show lists filter out already-started shows at response time. Email sends re-query each selected show before delivery. The email recipient is registered once per machine in local SQLite, not passed to a send tool.
-
-If an `example.com` placeholder was accidentally registered, run `npm run recipient:correct` in a local terminal to replace it once. This repair is not an MCP tool.
+In `.env`, set:
+- `DATABASE_URL` (read-only Postgres connection string).
 
 ## Connect
 
-Replace `<repo>` with this repository's absolute path. Use the same Node binary that installed the dependencies (important for the native SQLite module):
-
 ```sh
-NODE_BIN="$(command -v node)"
-codex mcp add letsgetdown --env DATABASE_SSL_NO_VERIFY=true -- "$NODE_BIN" <repo>/dist/index.js
-claude mcp add --scope user letsgetdown -- env DATABASE_SSL_NO_VERIFY=true "$NODE_BIN" <repo>/dist/index.js
+npm run add-claude-mcp
 ```
 
-Run `codex mcp list` or `claude mcp list` to confirm registration, then ask either client: “What shows are playing in Hollywood tonight?” The SSL setting is the local Supabase certificate workaround; remove it once certificate verification works normally.
+This registers the built server with Claude Code. It includes `DATABASE_SSL_NO_VERIFY=true`, a local Supabase certificate workaround
 
-For local Streamable HTTP with all six tools, run `npm run dev:http` and use `http://127.0.0.1:3001/mcp`. Set `MCP_AUTH_TOKEN` for bearer-token protection.
-
-Story 7's first hosted-mode slice is available for local testing with `npm run dev:http-public`. In a second terminal, run `npm run inspect:http-public`; Inspector opens against the correct URL. This mode advertises only the four read-only discovery tools; it never registers email or personal-data tools. It is not a production deployment: user identity, private settings storage, rate limits, and HTTPS hosting are still pending. Both `dev:http*` scripts enable the local Supabase certificate workaround; do not use them for cloud hosting.
-
-## Test
-
-```sh
-npm run typecheck
-npm test
-npx @modelcontextprotocol/inspector --cli env DATABASE_SSL_NO_VERIFY=true node dist/index.js --method tools/call --tool-name shows_tonight
-npx @modelcontextprotocol/inspector --cli env DATABASE_SSL_NO_VERIFY=true node dist/index.js --method tools/call --tool-name weekend_neighborhoods
-```
-
-The Inspector commands start a fresh server process, so they do not conflict with an MCP already listening on port 3001. They pass the local-test SSL workaround into that process. `DATABASE_SSL_NO_VERIFY=true` disables certificate verification; leave it off when a trusted certificate chain is available. The server also accepts `DATABASE_SSL_NO_VERIFY=true` in `.env`.
-
-## Available Tools
+## Tools
 
 | Tool | Inputs | What it does |
 | --- | --- | --- |
-| `shows_tonight` | Optional: `neighborhood` (string) | Lists up to 20 upcoming shows on the current Los Angeles calendar date. |
-| `search_shows` | Required: `start_date`, `end_date` (strings). Optional: `genre`, `neighborhood` (strings); `max_price` (number). | Finds up to 20 upcoming shows in the site's data within an inclusive date range. When `max_price` is set, shows with unknown prices are excluded. |
-| `get_show` | Required: `show_id` (UUID string) | Gets details for one show. |
-| `weekend_neighborhoods` | None | Ranks neighborhoods by upcoming shows this Friday–Sunday in LA time; reports unresolved locations. Requires `MAPBOX_ACCESS_TOKEN`. |
-| `set_my_email` | Required: `email` (string) | Registers one email address on this machine for the email tools. Does not send mail. |
-| `send_show_to_me` | Required: `show_id` (string). Optional: `note` (string). | Emails one upcoming show with its full ticket-purchase URL. Requires `set_my_email` first. |
-| `email_summary` | Required: `show_ids` (array of 1–20 strings). | Emails a summary of selected upcoming shows, each with a full ticket-purchase URL. Requires `set_my_email` first. |
+| `shows_tonight` | Optional: `neighborhood` | Lists up to 20 upcoming shows tonight (LA time). |
+| `search_shows` | Required: `start_date`, `end_date`. Optional: `genre`, `neighborhood`, `max_price` | Finds up to 20 upcoming shows in a date range of up to 31 days. |
+| `get_show` | Required: `show_id` | Gets details for one show. |
+| `weekend_neighborhoods` | None | Ranks neighborhoods by upcoming shows this Friday–Sunday (LA time). Requires `MAPBOX_ACCESS_TOKEN`. |
+| `set_my_email` | Required: `email` | Registers the email address used by the email tools. |
+| `send_show_to_me` | Required: `show_id`. Optional: `note` | Emails one show with its ticket URL. |
+| `email_summary` | Required: `show_ids` (1–20) | Emails a summary of selected shows with ticket URLs. |
+
+## Implementation details
+
+The fallback uses [Mapbox Search Box](https://docs.mapbox.com/api/search/search-box/) and reads `properties.context.neighborhood.name`. [Mapbox Places address properties](https://docs.mapbox.com/api/search/places/#address-properties) document the analogous `address.neighborhood` field, but this server does not call Places Details.

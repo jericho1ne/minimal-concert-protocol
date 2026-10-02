@@ -15,7 +15,8 @@
     "check:venue-location": "node --import tsx src/check-venue-location.ts",
     "recipient:correct": "node --import tsx src/correct-recipient.ts",
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
-    "inspect:http-public": "npx @modelcontextprotocol/inspector --server-url http://127.0.0.1:3001/mcp --transport http"
+    "inspect:http-public": "npx @modelcontextprotocol/inspector --server-url http://127.0.0.1:3001/mcp --transport http",
+    "add-claude-mcp": "claude mcp add --scope user letsgetdown -- env DATABASE_SSL_NO_VERIFY=true \"$(command -v node)\" \"$PWD/dist/index.js\""
   },
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.0",
