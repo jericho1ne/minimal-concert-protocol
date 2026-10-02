@@ -20,6 +20,8 @@ The fallback uses [Mapbox Search Box](https://docs.mapbox.com/api/search/search-
 
 The available tools are `shows_tonight`, `search_shows`, `get_show`, `set_my_email`, `send_show_to_me`, and `email_summary`. Results are capped at 20 and use Los Angeles time. The email recipient is registered once per machine, not passed to a send tool.
 
+If an `example.com` placeholder was accidentally registered, run `npm run recipient:correct` in a local terminal to replace it once. This repair is not an MCP tool.
+
 ## Connect
 
 Replace `<repo>` with this repository's absolute path:

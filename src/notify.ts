@@ -29,7 +29,21 @@ export class ResendNotifier implements Notifier {
       body: JSON.stringify({ from: this.from, to: [message.to], subject: message.subject, text: message.text, html: message.html }),
       signal: AbortSignal.timeout(10000)
     });
-    if (!response.ok) throw new Error(`Resend rejected email (HTTP ${response.status})`);
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const body = await response.json() as { name?: unknown; message?: unknown };
+        const name = typeof body.name === 'string' && /^[a-z_]{1,50}$/.test(body.name) ? body.name : '';
+        const message = typeof body.message === 'string' ? body.message
+          .replace(/re_[A-Za-z0-9_-]{8,}/g, '[redacted key]')
+          .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+          .replace(/https?:\/\/\S+/gi, '[url]')
+          .replace(/[\r\n\t\u0000-\u001f<>]/g, ' ')
+          .trim().slice(0, 300) : '';
+        detail = [name, message].filter(Boolean).join(': ');
+      } catch { /* Keep the HTTP status when Resend sends no JSON error body. */ }
+      throw new Error(`Resend rejected email (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
+    }
   }
 }
 

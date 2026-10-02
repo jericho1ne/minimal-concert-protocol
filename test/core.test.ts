@@ -4,8 +4,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DateTime } from 'luxon';
+import Database from 'better-sqlite3';
 import { cacheKey, LocalStore, normalizeText } from '../src/cache.js';
-import { makeMessage } from '../src/notify.js';
+import { makeMessage, ResendNotifier } from '../src/notify.js';
 import { formatShow, formatShowWithId, laDay, ShowService, type Show } from '../src/shows.js';
 import type { Config } from '../src/config.js';
 import { poolOptions } from '../src/db.js';
@@ -47,13 +48,31 @@ test('machine email is persistent and cannot be switched through MCP', () => {
   const folder = mkdtempSync(join(tmpdir(), 'letsgetdown-test-'));
   const path = join(folder, 'cache.sqlite');
   const first = new LocalStore(path);
-  assert.equal(first.registerEmail('me@example.com'), 'saved');
+  assert.throws(() => first.registerEmail('you@example.com'), /real recipient email/);
+  assert.equal(first.registerEmail('me@letsgetdown.io'), 'saved');
   first.close();
   const second = new LocalStore(path);
-  assert.equal(second.getEmail(), 'me@example.com');
-  assert.equal(second.registerEmail('me@example.com'), 'already-saved');
-  assert.throws(() => second.registerEmail('someone@example.com'));
+  assert.equal(second.getEmail(), 'me@letsgetdown.io');
+  assert.equal(second.registerEmail('me@letsgetdown.io'), 'already-saved');
+  assert.throws(() => second.registerEmail('someone@letsgetdown.io'));
+  assert.throws(() => second.correctPlaceholderEmail('someone@letsgetdown.io'), /No placeholder recipient/);
   second.close();
+});
+
+test('local-only correction replaces an example.com recipient once', () => {
+  const folder = mkdtempSync(join(tmpdir(), 'letsgetdown-recipient-test-'));
+  const path = join(folder, 'cache.sqlite');
+  const initial = new LocalStore(path);
+  initial.close();
+  // Simulate an address saved by the earlier version of the MCP.
+  const db = new Database(path);
+  db.prepare("INSERT INTO settings (key, value) VALUES ('email', ?)").run('you@example.com');
+  db.close();
+  const store = new LocalStore(path);
+  store.correctPlaceholderEmail('me@letsgetdown.io');
+  assert.equal(store.getEmail(), 'me@letsgetdown.io');
+  assert.throws(() => store.correctPlaceholderEmail('another@letsgetdown.io'), /No placeholder recipient/);
+  store.close();
 });
 
 test('compact line and email include full URL and escaped HTML', () => {
@@ -63,6 +82,36 @@ test('compact line and email include full URL and escaped HTML', () => {
   assert.match(message.text, /https:\/\/tickets\.example\/show\?x=1&y=2/);
   assert.match(message.html, /&lt;hi&gt;/);
   assert.match(message.html, /x=1&amp;y=2/);
+});
+
+test('Resend sends one email with the full ticket link and reports provider rejection', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls++;
+    assert.equal(String(input), 'https://api.resend.com/emails');
+    assert.equal(init?.method, 'POST');
+    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer test-key');
+    const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    assert.equal(payload.from, 'Shows <alerts@example.com>');
+    assert.deepEqual(payload.to, ['me@example.com']);
+    assert.match(String(payload.text), /https:\/\/tickets\.example\/show\?x=1&y=2/);
+    assert.match(String(payload.html), /href="https:\/\/tickets\.example\/show\?x=1&amp;y=2"/);
+    return {
+      ok: calls === 1,
+      status: calls === 1 ? 200 : 422,
+      json: async () => ({ name: 'validation_error', message: 'Invalid from address alerts@example.com' })
+    } as Response;
+  }) as typeof fetch;
+  try {
+    const notifier = new ResendNotifier('test-key', 'Shows <alerts@example.com>');
+    const message = makeMessage('me@example.com', [show]);
+    await notifier.send(message);
+    await assert.rejects(notifier.send(message), /Resend rejected email \(HTTP 422\): validation_error: Invalid from address \[email\]/);
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('search uses fixed parameterized SQL, includes unknown price, caps results', async () => {

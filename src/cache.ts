@@ -41,6 +41,7 @@ export class LocalStore {
   }
 
   registerEmail(email: string): 'saved' | 'already-saved' {
+    if (/@example\.(com|org|net)$/i.test(email)) throw new Error('Use a real recipient email, not an example.com placeholder');
     const existing = this.getEmail();
     if (existing) {
       if (existing !== email) throw new Error('This machine already has a different email address configured. Change it locally, outside MCP.');
@@ -48,6 +49,17 @@ export class LocalStore {
     }
     this.db.prepare("INSERT INTO settings (key, value) VALUES ('email', ?)").run(email);
     return 'saved';
+  }
+
+  // Local maintainer recovery only; never exposed as an MCP tool.
+  correctPlaceholderEmail(email: string): void {
+    if (/@example\.(com|org|net)$/i.test(email)) throw new Error('Use a real recipient email');
+    const existing = this.getEmail();
+    if (!existing || !/@example\.(com|org|net)$/i.test(existing)) {
+      throw new Error('No placeholder recipient is registered; local correction is unavailable');
+    }
+    const result = this.db.prepare("UPDATE settings SET value = ? WHERE key = 'email' AND value = ?").run(email, existing);
+    if (result.changes !== 1) throw new Error('Recipient changed during correction; no update made');
   }
 
   close(): void { this.db.close(); }
