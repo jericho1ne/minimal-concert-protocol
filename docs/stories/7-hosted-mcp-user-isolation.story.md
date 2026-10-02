@@ -19,7 +19,7 @@ As a showgoer using a shared hosted MCP endpoint, I want my saved email, future 
 
 - Choose the hosted identity provider and verify client support for its authorization flow.
 - Design the per-user (and, if needed, per-installation) persistence schema and migration in Supabase Postgres.
-- Keep the implemented `--http-public` discovery-only mode free of personal tools. Next, separate authenticated notification handlers while preserving the current local-only behavior.
+- Keep the implemented `--http-public` discovery-only mode free of personal tools, including the neighborhood-count tool. Next, separate authenticated notification handlers while preserving the current local-only behavior.
 - Add isolation/security tests, then deploy and document the hosted HTTPS endpoint.
 
 ## Note

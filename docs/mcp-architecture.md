@@ -8,7 +8,7 @@ flowchart TB
 
     subgraph SERVER["letsgetdown MCP server"]
         ENTRY["Tool interface"]
-        READ["Read tools<br/>shows_tonight · search_shows · get_show"]
+        READ["Read tools<br/>shows_tonight · search_shows · get_show · weekend_neighborhoods"]
         EMAIL["Email tools<br/>set_my_email · send_show_to_me · email_summary"]
         SHOWS["ShowService<br/>fixed, parameterized SQL"]
         CACHE[("Local SQLite<br/>show cache + one email per machine")]
@@ -33,6 +33,6 @@ flowchart TB
 
 The normal local transport is stdio. Streamable HTTP is optional; it binds to localhost by default, and `MCP_AUTH_TOKEN` can require a bearer token. A non-local bind requires that token.
 
-The `--http-public` mode registers only the three show-discovery tools. Personal/email tools remain available over local stdio or localhost HTTP, but non-local HTTP cannot run with those tools. Hosted user identity and private per-user storage are still Story 7 work; this diagram shows the current local email flow.
+The `--http-public` mode registers only the four show-discovery tools. Personal/email tools remain available over local stdio or localhost HTTP, but non-local HTTP cannot run with those tools. Hosted user identity and private per-user storage are still Story 7 work; this diagram shows the current local email flow.
 
-The SQLite cache defaults to a 12-hour TTL. Mapbox Search Box results are used only in responses, not persisted in the cache. Notification backends are selected with `NOTIFY_BACKENDS`; the implemented adapters are `resend` and `console`. SMS, Klaviyo, and ntfy are not part of the current server.
+The SQLite cache defaults to a 12-hour TTL. `weekend_neighborhoods` caches only raw show rows; it resolves distinct venues with Mapbox once per request, counts upcoming shows, and leaves unresolved locations out of the ranking. Mapbox Search Box results are used only in responses, not persisted in the cache. Notification backends are selected with `NOTIFY_BACKENDS`; the implemented adapters are `resend` and `console`. SMS, Klaviyo, and ntfy are not part of the current server.

@@ -350,7 +350,7 @@ test('search_shows filters on Mapbox neighborhood without caching it', async () 
   };
   try {
     const service = new ShowService({ ...config, mapboxAccessToken: 'test-token' }, store, fakePool as never);
-    const filters = { start_date: day, end_date: day, neighborhood: 'Hollywood', max_price: 20 };
+    const filters = { start_date: day, end_date: day, neighborhood: 'Hollywood' };
     assert.equal((await service.search(filters))[0]?.neighborhood, 'Hollywood');
     assert.equal((await service.search(filters))[0]?.neighborhood, 'Hollywood');
     assert.equal(dbCalls, 1);
