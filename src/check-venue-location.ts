@@ -14,13 +14,18 @@ interface MapboxResponse {
     name?: string;
     full_address?: string;
     place_formatted?: string;
-    context?: { neighborhood?: { name?: string } };
+    context?: {
+      neighborhood?: { name?: string };
+      region?: { region_code?: string };
+      country?: { country_code?: string };
+    };
   } }>;
 }
 
 async function main(): Promise<void> {
   const token = process.env.MAPBOX_ACCESS_TOKEN;
   if (!token) throw new Error('Add MAPBOX_ACCESS_TOKEN to .env first');
+  const requestedVenue = process.argv.slice(2).join(' ').trim() || 'The Echo';
 
   const pool = new Pool({ ...poolOptions(loadConfig()), max: 1, connectionTimeoutMillis: 8000 });
   let venue: VenueRow;
@@ -29,13 +34,12 @@ async function main(): Promise<void> {
       `SELECT COALESCE(v.name, s.raw_venue_name) AS venue, v.city
        FROM public.liveshows AS s
        LEFT JOIN public.venues AS v ON v.id = COALESCE(s.venue_uuid, s.venue_id)
-       WHERE length(trim(COALESCE(v.name, s.raw_venue_name, ''))) > 0
-       ORDER BY CASE WHEN lower(COALESCE(v.name, s.raw_venue_name)) = lower($1) THEN 0 ELSE 1 END,
-                CASE WHEN s.date >= now() THEN 0 ELSE 1 END, s.date DESC
+       WHERE lower(COALESCE(v.name, s.raw_venue_name)) = lower($1)
+       ORDER BY CASE WHEN s.date >= now() THEN 0 ELSE 1 END, s.date DESC
        LIMIT 1`,
-      ['The Echo']
+      [requestedVenue]
     );
-    if (!result.rows[0]) throw new Error('No show with a venue name found');
+    if (!result.rows[0]) throw new Error(`No show found at venue: ${requestedVenue}`);
     venue = result.rows[0];
   } finally {
     await pool.end();
@@ -56,10 +60,15 @@ async function main(): Promise<void> {
   console.log(JSON.stringify({
     venue: venue.venue,
     city: venue.city,
+    mapbox_type: match?.properties?.feature_type ?? null,
     mapbox_name: match?.properties?.name ?? null,
+    name_matches: match?.properties?.name?.trim().toLowerCase().replace(/^the /, '') ===
+      venue.venue.trim().toLowerCase().replace(/^the /, ''),
     mapbox_address: match?.properties?.full_address ?? null,
     mapbox_place: match?.properties?.place_formatted ?? null,
-    neighborhood: match?.properties?.context?.neighborhood?.name ?? null
+    neighborhood: match?.properties?.context?.neighborhood?.name ?? null,
+    region_code: match?.properties?.context?.region?.region_code ?? null,
+    country_code: match?.properties?.context?.country?.country_code ?? null
   }));
 }
 

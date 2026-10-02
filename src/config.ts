@@ -10,6 +10,7 @@ export interface Config {
   databaseSslNoVerify: boolean;
   geminiApiKey?: string;
   geminiModel: string;
+  mapboxAccessToken?: string;
   resendApiKey?: string;
   emailFrom?: string;
   notifyBackends: string[];
@@ -37,6 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseSslNoVerify: env.DATABASE_SSL_NO_VERIFY === 'true',
     geminiApiKey: env.GEMINI_API_KEY || undefined,
     geminiModel: env.GEMINI_MODEL || 'gemini-2.5-flash',
+    mapboxAccessToken: env.MAPBOX_ACCESS_TOKEN || undefined,
     resendApiKey: env.RESEND_API_KEY || undefined,
     emailFrom: env.EMAIL_FROM || undefined,
     notifyBackends,

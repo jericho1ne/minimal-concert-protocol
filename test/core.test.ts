@@ -9,6 +9,7 @@ import { makeMessage } from '../src/notify.js';
 import { formatShow, formatShowWithId, laDay, ShowService, type Show } from '../src/shows.js';
 import type { Config } from '../src/config.js';
 import { poolOptions } from '../src/db.js';
+import { lookupVenueNeighborhood } from '../src/mapbox.js';
 
 const show: Show = {
   id: '833aeb44-3877-4ac2-ae16-7df4f408a951',
@@ -88,4 +89,60 @@ test('search uses fixed parameterized SQL, includes unknown price, caps results'
   assert.deepEqual(first, second);
   assert.equal(calls, 1);
   store.close();
+});
+
+test('Mapbox venue lookup accepts an exact LA POI and rejects a different venue', async () => {
+  const fakeFetch = (async (url: URL) => {
+    assert.equal(url.pathname, '/search/searchbox/v1/forward');
+    assert.equal(url.searchParams.get('types'), 'poi');
+    return { ok: true, json: async () => ({ features: [{ properties: {
+      feature_type: 'poi', name: 'The Echo',
+      context: { neighborhood: { name: 'Echo Park' }, region: { region_code: 'CA' } }
+    } }] }) } as Response;
+  }) as typeof fetch;
+  assert.equal(await lookupVenueNeighborhood('The Echo', null, 'test-token', fakeFetch), 'Echo Park');
+  assert.equal(await lookupVenueNeighborhood('Another Echo', null, 'test-token', fakeFetch), null);
+});
+
+test('Mapbox venue lookup accepts an optional leading The', async () => {
+  const fakeFetch = (async () => ({ ok: true, json: async () => ({ features: [{ properties: {
+    feature_type: 'poi', name: 'The Fonda Theatre',
+    context: { neighborhood: { name: 'Hollywood' }, region: { region_code: 'CA' }, country: { country_code: 'US' } }
+  } }] }) } as Response)) as typeof fetch;
+  assert.equal(await lookupVenueNeighborhood('Fonda Theatre', null, 'test-token', fakeFetch), 'Hollywood');
+  assert.equal(await lookupVenueNeighborhood('Fonda Theatre Annex', null, 'test-token', fakeFetch), null);
+});
+
+test('shows_tonight adds Mapbox neighborhood without caching the Mapbox result', async () => {
+  const store = new LocalStore(':memory:');
+  const originalFetch = globalThis.fetch;
+  let mapboxCalls = 0;
+  let dbCalls = 0;
+  globalThis.fetch = (async () => {
+    mapboxCalls++;
+    return { ok: true, json: async () => ({ features: [{ properties: {
+      feature_type: 'poi', name: 'The Echo', context: { neighborhood: { name: 'Echo Park' } }
+    } }] }) } as Response;
+  }) as typeof fetch;
+  const fakePool = {
+    query: async () => {
+      dbCalls++;
+      return { rows: [{
+        id: show.id, artist: show.artist, venue: show.venue,
+        date: new Date(Date.now() + 60 * 60_000), tickets_url: null,
+        full_address: null, city: null
+      }] };
+    },
+    end: async () => {}
+  };
+  try {
+    const service = new ShowService({ ...config, mapboxAccessToken: 'test-token' }, store, fakePool as never);
+    assert.equal((await service.tonight())[0]?.neighborhood, 'Echo Park');
+    assert.equal((await service.tonight())[0]?.neighborhood, 'Echo Park');
+    assert.equal(dbCalls, 1);
+    assert.equal(mapboxCalls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    store.close();
+  }
 });

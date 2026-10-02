@@ -4,6 +4,7 @@ import { cacheKey, LocalStore, normalizeText } from './cache.js';
 import type { Config } from './config.js';
 import { poolOptions } from './db.js';
 import { enrichShows } from './enrich.js';
+import { lookupVenueNeighborhood } from './mapbox.js';
 
 export const LA_ZONE = 'America/Los_Angeles';
 
@@ -92,7 +93,7 @@ export class ShowService {
     this.pool = pool ?? new Pool(poolOptions(config));
   }
 
-  async search(filters: SearchFilters): Promise<Show[]> {
+  async search(filters: SearchFilters, resultLimit = 20): Promise<Show[]> {
     const start = laDay(filters.start_date);
     const end = laDay(filters.end_date);
     if (end < start || end.diff(start, 'days').days > 31) throw new Error('Date range must be 0–31 days');
@@ -122,18 +123,35 @@ export class ShowService {
       .filter(show => !neighborhood || normalizeText(show.neighborhood ?? undefined) === neighborhood)
       .filter(show => !genre || normalizeText(show.genre ?? undefined)?.includes(genre))
       .filter(show => filters.max_price === undefined || show.price === null || show.price <= filters.max_price)
-      .slice(0, 20);
+      .slice(0, resultLimit);
   }
 
   async tonight(neighborhood?: string): Promise<Show[]> {
     const today = DateTime.now().setZone(LA_ZONE).toISODate()!;
-    const key = cacheKey('shows_tonight', { la_date: today, neighborhood: normalizeText(neighborhood) });
+    const wanted = normalizeText(neighborhood);
+    const key = cacheKey('shows_tonight', { la_date: today, neighborhood: wanted, version: 'mapbox-response-only' });
     let shows = this.store.get<Show[]>(key);
     if (!shows) {
-      shows = await this.search({ start_date: today, end_date: today, neighborhood });
+      shows = await this.search({ start_date: today, end_date: today }, wanted ? 100 : 20);
+      // Cache the DB/Gemini result only; Mapbox data is added to response copies below.
       this.store.put(key, shows, this.config.cacheTtlHours);
     }
-    return shows.filter(show => new Date(show.startsAt).getTime() >= Date.now()).slice(0, 20);
+    const resolved = new Map<string, string | null>();
+    const matches: Show[] = [];
+    for (const show of shows) {
+      if (new Date(show.startsAt).getTime() < Date.now()) continue;
+      let enriched = show;
+      if (!show.neighborhood && this.config.mapboxAccessToken) {
+        const venueKey = `${normalizeText(show.venue)}|${normalizeText(show.city ?? undefined)}`;
+        if (!resolved.has(venueKey)) {
+          resolved.set(venueKey, await lookupVenueNeighborhood(show.venue, show.city, this.config.mapboxAccessToken));
+        }
+        enriched = { ...show, neighborhood: resolved.get(venueKey) ?? null };
+      }
+      if (!wanted || normalizeText(enriched.neighborhood ?? undefined) === wanted) matches.push(enriched);
+      if (matches.length === 20) break;
+    }
+    return matches;
   }
 
   async get(showId: string): Promise<Show | undefined> {
