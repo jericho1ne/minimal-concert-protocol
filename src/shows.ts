@@ -39,6 +39,34 @@ export interface SearchFilters {
   max_price?: number;
 }
 
+export interface NeighborhoodCount {
+  neighborhood: string;
+  shows: number;
+}
+
+export interface WeekendNeighborhoodCounts {
+  startDate: string;
+  endDate: string;
+  totalShows: number;
+  unresolvedShows: number;
+  neighborhoods: NeighborhoodCount[];
+}
+
+interface NeighborhoodCandidate {
+  venue: string;
+  city: string | null;
+  startsAt: string;
+}
+
+export function weekendWindow(now: DateTime = DateTime.now().setZone(LA_ZONE)): { start: DateTime; end: DateTime } {
+  const local = now.setZone(LA_ZONE);
+  const friday = local.weekday < 5
+    ? local.plus({ days: 5 - local.weekday })
+    : local.minus({ days: local.weekday - 5 });
+  const start = friday.startOf('day');
+  return { start, end: start.plus({ days: 3 }) };
+}
+
 export function laDay(value: string): DateTime {
   const date = DateTime.fromISO(value, { zone: LA_ZONE });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !date.isValid || date.toISODate() !== value) {
@@ -138,6 +166,63 @@ export class ShowService {
       this.store.put(key, shows, this.config.cacheTtlHours);
     }
     return this.selectShows(shows, wanted);
+  }
+
+  async weekendNeighborhoods(now: DateTime = DateTime.now().setZone(LA_ZONE)): Promise<WeekendNeighborhoodCounts> {
+    if (!this.config.mapboxAccessToken) throw new Error('MAPBOX_ACCESS_TOKEN is required for neighborhood counts');
+    const { start, end } = weekendWindow(now);
+    const key = cacheKey('weekend_neighborhoods_db', { start_date: start.toISODate()!, version: 'raw-shows-v1' });
+    let candidates = this.store.get<NeighborhoodCandidate[]>(key);
+    if (!candidates) {
+      const result = await this.pool.query<Pick<DbRow, 'venue' | 'city' | 'date'>>(
+        `SELECT COALESCE(v.name, s.raw_venue_name) AS venue, v.city, s.date
+         FROM public.liveshows AS s
+         LEFT JOIN public.venues AS v ON v.id = COALESCE(s.venue_uuid, s.venue_id)
+         WHERE s.date >= $1 AND s.date < $2 AND s.date >= $3 ORDER BY s.date ASC LIMIT 1001`,
+        [start.toUTC().toISO(), end.toUTC().toISO(), now.toUTC().toISO()]
+      );
+      if (result.rows.length > 1000) throw new Error('Too many weekend shows to count accurately');
+      candidates = result.rows.map(row => ({
+        venue: row.venue || 'Venue unknown',
+        city: row.city,
+        startsAt: new Date(row.date).toISOString()
+      }));
+      // Search Box results are temporary-use only; only raw database rows are cached.
+      this.store.put(key, candidates, this.config.cacheTtlHours);
+    }
+
+    const upcoming = candidates.filter(show => new Date(show.startsAt).getTime() >= now.toMillis());
+    const venueKey = (show: NeighborhoodCandidate): string => JSON.stringify([
+      normalizeText(show.venue)?.replace(/^the /, ''), normalizeText(show.city ?? undefined)
+    ]);
+    const venues = new Map<string, NeighborhoodCandidate>();
+    for (const show of upcoming) venues.set(venueKey(show), show);
+    if (venues.size > 100) throw new Error('Too many distinct weekend venues to resolve accurately');
+
+    // Start no more than one Search Box request every 120 ms (under its default 10/s limit).
+    const entries = [...venues];
+    const lookedUp = await Promise.all(entries.map(async ([key, venue], index) => {
+      if (index) await new Promise(resolve => setTimeout(resolve, index * 120));
+      return [key, await lookupVenueNeighborhood(venue.venue, venue.city, this.config.mapboxAccessToken!)] as const;
+    }));
+    const names = new Map<string, string | null>(lookedUp);
+    const counts = new Map<string, NeighborhoodCount>();
+    let unresolvedShows = 0;
+    for (const show of upcoming) {
+      const neighborhood = names.get(venueKey(show));
+      if (!neighborhood) { unresolvedShows++; continue; }
+      const normalized = normalizeText(neighborhood)!;
+      const count = counts.get(normalized) ?? { neighborhood, shows: 0 };
+      count.shows++;
+      counts.set(normalized, count);
+    }
+    return {
+      startDate: start.toISODate()!,
+      endDate: end.minus({ days: 1 }).toISODate()!,
+      totalShows: upcoming.length,
+      unresolvedShows,
+      neighborhoods: [...counts.values()].sort((a, b) => b.shows - a.shows || a.neighborhood.localeCompare(b.neighborhood))
+    };
   }
 
   private async selectShows(shows: Show[], wanted?: string, genre?: string, maxPrice?: number): Promise<Show[]> {

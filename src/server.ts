@@ -54,6 +54,24 @@ export function createServer(config: Config, store: LocalStore, shows: ShowServi
     } catch (error) { return failure(error); }
   });
 
+  server.registerTool('weekend_neighborhoods', {
+    description: 'Rank neighborhoods by number of upcoming shows this Friday through Sunday in Los Angeles time. Counts all matching database shows, not just the first 20. Use for questions like “Which neighborhood has the most shows this weekend?”',
+    inputSchema: z.strictObject({})
+  }, async () => {
+    try {
+      const result = await shows.weekendNeighborhoods();
+      const period = `${result.startDate}–${result.endDate} (LA time)`;
+      if (!result.totalShows) return success(`No upcoming shows this weekend, ${period}.`);
+      if (!result.neighborhoods.length) return success(`No neighborhoods could be resolved for ${result.totalShows} upcoming shows this weekend, ${period}.`);
+      const clean = (name: string) => name.replace(/[\r\n\t\u0000-\u001f]+/g, ' ').trim();
+      const topCount = result.neighborhoods[0]!.shows;
+      const leaders = result.neighborhoods.filter(item => item.shows === topCount).map(item => clean(item.neighborhood));
+      const ranking = result.neighborhoods.slice(0, 10).map(item => `${clean(item.neighborhood)}: ${item.shows} show${item.shows === 1 ? '' : 's'}`);
+      const more = result.neighborhoods.length > 10 ? `\n${result.neighborhoods.length - 10} more neighborhoods omitted.` : '';
+      return success(`Most upcoming shows this weekend, ${period}: ${leaders.join(' and ')} (${topCount}).\n${ranking.join('\n')}${more}\nNeighborhood unresolved: ${result.unresolvedShows} of ${result.totalShows} shows.`);
+    } catch (error) { return failure(error); }
+  });
+
   if (options.readOnly) return server;
 
   server.registerTool('set_my_email', {
